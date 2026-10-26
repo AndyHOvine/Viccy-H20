@@ -1,6 +1,6 @@
 // Derived from VICE src/vic20/vic20sound.c, written by Rami Rasanen and
 // Ville-Matias Heikkila, Copyright (C) The VICE Team.
-// Ported to JavaScript and modified for Viccy, 2026. GPL v2 or later, see LICENSE.
+// Ported to JavaScript and modified for Viccy H20, 2026. GPL v2 or later, see LICENSE.
 
 import { NOISE_PATTERN, VOLTAGE_FUNCTION } from './vicsound-tables.js';
 

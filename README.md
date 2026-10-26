@@ -1,4 +1,4 @@
-# Viccy
+# Viccy H20
 
 A VIC-20 emulator in plain JavaScript for the web browser, made for VIC-20 games.
 A published game is a folder of static files with no dependencies.
@@ -32,7 +32,7 @@ Nothing else needs installing.
 
 ### ROMs
 
-IMPORTANT: The Commodore ROMs are not included. Viccy won't start without them. 
+IMPORTANT: The Commodore ROMs are not included. Viccy H20 won't start without them. 
 You will need a copy of these five files in `web/roms/`, renamed as shown:
 
 | File | Size | ROM | Name in VICE |
@@ -276,7 +276,7 @@ export default {
 To update the game, build again and replace the ZIP on the same page.
 
 Players' choices (CRT on or off, keyboard joystick, display settings, volume) are
-remembered in their browser and shared between all Viccy games on itch.io.
+remembered in their browser and shared between all Viccy H20 games on itch.io.
 Set `persistShared: false` to keep a game's choices to itself, or `persist: false`
 to remember nothing.
 
@@ -322,7 +322,7 @@ to remember nothing.
 | `ui.allowFileDrop` | let players load their own files | `true` |
 | `hotkeys` | `{ joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '' }` | |
 | `persist` | remember each player's choices in their browser | `true` |
-| `persistShared` | share those choices with every Viccy page on the same site | `true` |
+| `persistShared` | share those choices with every Viccy H20 page on the same site | `true` |
 | `urlParams` | allow `?disk=` style overrides in the page address | `true` |
 
 **CRT emulation settings** (`video.crt`) and defaults: `blur` 100, `scanlineShade` 800,
@@ -363,6 +363,6 @@ joystick keys in the settings panel.
 
 ## Licence
 
-Viccy is free software under the GNU General Public License, version 2 or (at your
-option) any later version. See `LICENSE`. The Commodore ROMs are not part of Viccy
+Viccy H20 is free software under the GNU General Public License, version 2 or (at your
+option) any later version. See `LICENSE`. The Commodore ROMs are not part of Viccy H20
 and are not covered by this licence.

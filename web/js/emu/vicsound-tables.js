@@ -1,6 +1,6 @@
 // Derived from VICE src/vic20/vic20sound.c, written by Rami Rasanen and
 // Ville-Matias Heikkila, Copyright (C) The VICE Team.
-// Ported to JavaScript and modified for Viccy, 2026. GPL v2 or later, see LICENSE.
+// Ported to JavaScript and modified for Viccy H20, 2026. GPL v2 or later, see LICENSE.
 
 export const NOISE_PATTERN = new Uint8Array([
   7, 30, 30, 28, 28, 62, 60, 56, 120, 248, 124, 30, 31, 143, 7, 7, 193, 192, 224,

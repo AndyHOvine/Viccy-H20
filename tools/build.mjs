@@ -20,7 +20,7 @@ if (gameFile && !fs.existsSync(gameFile)) {
 if (!name) {
   name = gameFile
     ? path.basename(gameFile, path.extname(gameFile)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'game'
-    : 'viccy';
+    : 'viccy-h20';
 }
 
 const bundledName = gameFile ? name + path.extname(gameFile).toLowerCase() : null;

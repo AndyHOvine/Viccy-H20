@@ -1,6 +1,6 @@
 // VIC colour model derived from VICE src/vic20/vic-color.c, written by John Selck
 // (YUV research by Philip Timmermann and John Selck), Copyright (C) The VICE Team.
-// Ported to JavaScript and modified for Viccy, 2026. GPL v2 or later, see LICENSE.
+// Ported to JavaScript and modified for Viccy H20, 2026. GPL v2 or later, see LICENSE.
 
 const RGB = {
   'mike-pal': [
