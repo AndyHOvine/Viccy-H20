@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Commodore ROMs, see README, "ROMs"
+web/roms/*.rom

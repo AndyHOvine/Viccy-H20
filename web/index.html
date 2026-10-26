@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Viccy VIC-20</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/viccy.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0b0c; }
+    #viccy { position: fixed; inset: 0; }
+    noscript { color: #ddd; font: 16px system-ui, sans-serif; display: block; padding: 2em; }
+  </style>
+</head>
+<body>
+  <div id="viccy"></div>
+  <noscript>This VIC-20 emulator needs JavaScript.</noscript>
+  <script type="module">
+    import { Viccy } from './js/viccy.js';
+    import config from './config.js';
+
+    Viccy.create(document.getElementById('viccy'), config).then((vic) => {
+      window.viccy = vic;
+    }).catch((e) => {
+      console.error(e);
+      document.getElementById('viccy').textContent = 'Failed to start: ' + (e.message || e);
+    });
+  </script>
+</body>
+</html>
