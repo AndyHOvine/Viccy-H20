@@ -10,6 +10,7 @@ A published game is a folder of static files with no dependencies.
   cartridges (single and multi-part, VICE `.crt`), ZIP files
 - CRT emulation and CRT filter (bulge, rounded corners, scanlines, RGB mask, tint)
 - Keyboard joystick (switch with F9), gamepads, touch controls on phones
+- Save states: four save and load slots per game, kept in the player's browser
 - Contains HEWCO's CRT filter for a nostalgic 1980's experience
 
 ---
@@ -81,13 +82,23 @@ Settings you can add after the file:
 | `joykeys` | `joykeys=0` | keyboard joystick on (`1`) or off (`0`) at start |
 | `crt` / `filter` | `crt=0 filter=0` | CRT emulation / CRT filter on or off |
 | `palette` | `palette=colodore` | `mike-pal`, `mike-ntsc`, `vice`, `colodore`, `vice-classic` |
+| `border` | `border=none` | `normal`, `full`, `tight` or `none` (see *All config options*) |
 | `drive` | `drive=fast` | `accurate` (emulated 1541) or `fast` (instant LOAD) |
 | `autostart` | `autostart=0` | `1`, `0`, or text to type |
 | `title` | `title="My Game"` | name on the start screen |
 | `minimal` | `minimal=1` | minimal toolbar |
+| `touchkeys` | `touchkeys=F1,SPACE,Y,N` | VIC keys shown as buttons on phones and tablets, or `none` (see *On-screen keys*) |
 
 You can also drag a file onto the emulator, or use the folder button in the
 toolbar. Hold **Shift** while doing either to attach the file without running it.
+
+**Save and load.** The floppy disk button in the toolbar opens four save slots. The
+game pauses while they are open; each slot shows a picture of the screen and when it
+was saved. **Shift+F9** saves and **Shift+F10** loads the last slot used, without
+opening the slots. Saves are kept in the browser (IndexedDB), separately for each
+game: a game is recognised by the contents of its files, so it keeps its slots after
+an update only if the files are unchanged. A save holds the whole machine, including
+the disk drive, the disk's contents and the tape position.
 
 To run the tests: `npm test`.
 
@@ -123,7 +134,8 @@ build.bat C:\games\mygame.d64 title="My Game" memory=8k joykeys=1 --name mygame
 ```
 
 The game is copied into `dist/mygame/games/`, and `dist/mygame/config.js` is
-generated to load it, on top of the defaults in `web/config.js`.
+generated to load it, on top of the defaults in `web/config.js`. Settings also work
+without a game file, on top of `web/config.js`.
 
 **B. Write the config yourself.**
 
@@ -141,6 +153,10 @@ generated to load it, on top of the defaults in `web/config.js`.
    ```
    build.bat --name mygame
    ```
+
+A file in `web/games/` is only loaded if `web/config.js` names it in `media`; the
+build warns about any that it doesn't. The [`examples/`](examples/README.md) folder
+has ready-made configs to copy over `web/config.js`.
 
 Either way you get `dist/mygame-itch.zip` to upload.
 
@@ -220,13 +236,18 @@ export default {
   autostart: 'LOAD"RACER",8,1\rSYS 4621\r',
   joystick: {
     keyboard: true,
-    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', fire: ['Space', 'KeyJ'] },
+    keys: {
+      up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
+      left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], fire: ['Space', 'KeyJ'],
+    },
   },
 };
 ```
 
 `\r` is RETURN. Key names are browser key codes: `KeyA`–`KeyZ`, `Digit0`–`Digit9`,
-`ArrowUp`, `Space`, `ShiftLeft`, `ControlRight` and so on.
+`ArrowUp`, `Space`, `ShiftLeft`, `ControlRight` and so on. Give one key, or a list:
+the first is the primary key and the second the secondary key that players see in
+the settings panel (any more also work).
 
 ### A locked-down page for players
 
@@ -237,8 +258,40 @@ export default {
 };
 ```
 
-The minimal view keeps pause, the keyboard joystick switch, the CRT button, sound
-and fullscreen, and hides reset, warp, load, unload and settings.
+The minimal view keeps pause, the keyboard joystick switch, save states, the CRT
+button, sound and fullscreen, and hides reset, warp, load, unload and settings.
+
+### On-screen keys for phones and tablets
+
+On touch screens, Viccy H20 shows a joystick, a fire button and a row of VIC-20
+keys. Choose the keys your game needs with `ui.touchKeys`:
+
+```js
+export default {
+  ui: {
+    title: 'Space Blaster',
+    touchKeys: [
+      'F1', 'SPACE', 'Y', 'N',
+      { key: 'F3', label: 'MUSIC' },
+      { keys: ['CBM', 'LSHIFT'], label: 'CASE' },
+    ],
+  },
+  media: { disk: 'games/spaceblaster.d64' },
+};
+```
+
+Each entry is a VIC key name, `{ key, label }` for a button with your own label, or
+`{ keys: [...], label }` for keys pressed together. With the build:
+`build.bat mygame.d64 touchkeys=F1,SPACE,Y,N`. Use `touchKeys: []` (or
+`touchkeys=none`) for no keys, only the joystick and fire button. Set
+`ui.touchControls: true` to show them on computers too, which helps when trying
+the layout.
+
+Key names: `A`–`Z`, `0`–`9`, `F1`–`F8` (F2, F4, F6 and F8 press SHIFT for you),
+`SPACE`, `RETURN`, `RUNSTOP`, `RESTORE`, `CBM` (C=), `CTRL`, `LSHIFT`, `RSHIFT`,
+`HOME`, `DEL`, `CRSRUP`, `CRSRDOWN`, `CRSRLEFT`, `CRSRRIGHT`, `LEFTARROW`, `UPARROW`,
+`POUND`, and `+ - * / = : ; , . @`. A name the emulator does not know is left out,
+with a warning in the browser console (the build stops on one).
 
 ### Plain pixels, no CRT
 
@@ -248,6 +301,19 @@ export default {
   video: { crt: false, filter: false, integerScale: true },
 };
 ```
+
+### No border
+
+```js
+export default {
+  media: { disk: 'games/spaceblaster.d64' },
+  video: { border: 'none' },
+};
+```
+
+The picture is cropped to the game's screen area, wherever the game puts it and
+however many rows and columns it uses, and follows it if the game changes it.
+Anything a game draws in the border (raster bars, colour splits) is cut off.
 
 ---
 
@@ -278,7 +344,8 @@ To update the game, build again and replace the ZIP on the same page.
 Players' choices (CRT on or off, keyboard joystick, display settings, volume) are
 remembered in their browser and shared between all Viccy H20 games on itch.io.
 Set `persistShared: false` to keep a game's choices to itself, or `persist: false`
-to remember nothing.
+to remember nothing. Save states are kept per game whatever these settings are;
+`ui.saveStates: false` turns them off.
 
 ---
 
@@ -303,24 +370,25 @@ to remember nothing.
 | `drive.mode` | `'accurate'` or `'fast'` | `'accurate'` |
 | `warp.auto` | full speed while the disk drive or tape is busy | `true` |
 | `joystick.keyboard` | start with the keyboard joystick on | `true` |
-| `joystick.keys` | `{ up, down, left, right, fire }`: one key code or a list per direction | cursor keys and numpad; fire = Right Ctrl, `\`, Right Alt, Numpad 0 |
+| `joystick.keys` | `{ up, down, left, right, fire }`: one key code or a list per direction (first = primary, second = secondary) | cursor keys and numpad; fire = Left Ctrl, Right Ctrl, Right Alt, Numpad 0 |
 | `joystick.buttons` | gamepad button to VIC key, e.g. `{ 9: 'F1', 8: 'SPACE' }` | `{}` |
 | `keyboardMap` | `'symbolic'` or `'positional'` | `'symbolic'` |
 | `video.crt` | `true`, `false`, or CRT emulation settings | `true` |
 | `video.filter` | `true`, `false`, or CRT filter settings | `true` |
 | `video.palette` | `'mike-pal'`, `'mike-ntsc'`, `'vice'`, `'colodore'`, `'vice-classic'` | `'mike-pal'` |
-| `video.border` | `'normal'`, `'full'`, `'tight'` | `'normal'` |
+| `video.border` | `'normal'`, `'full'`, `'tight'` (a thin border), `'none'` (only the game's screen area) | `'normal'` |
 | `video.aspect` | `'tv'` (non-square pixels) or `'square'` | `'tv'` |
 | `video.integerScale` | `true`, `false` | `false` |
 | `audio.volume` | 0 to 1 | `0.7` |
 | `ui.title` | name on the start screen and toolbar | `'VIC-20'` |
 | `ui.minimal` | minimal toolbar | `false` |
+| `ui.saveStates` | the save and load slots and their hotkeys | `true` |
 | `ui.toolbar`, `ui.settings` | show the toolbar / the settings panel | `true` |
 | `ui.clickToStart` | show the start screen (needed for sound) | `true` |
 | `ui.touchControls` | `'auto'`, `true`, `false` | `'auto'` |
-| `ui.touchKeys` | VIC keys shown as touch buttons | F1 F3 F5 F7 SPACE RETURN Y N |
+| `ui.touchKeys` | VIC keys shown as touch buttons: key names, `{ key, label }` or `{ keys: [...], label }` (see *On-screen keys*) | F1 F3 F5 F7 SPACE RETURN Y N |
 | `ui.allowFileDrop` | let players load their own files | `true` |
-| `hotkeys` | `{ joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '' }` | |
+| `hotkeys` | `{ joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '', saveState: 'Shift+F9', loadState: 'Shift+F10' }`. A key code, optionally after `Shift+`; `''` turns a hotkey off | |
 | `persist` | remember each player's choices in their browser | `true` |
 | `persistShared` | share those choices with every Viccy H20 page on the same site | `true` |
 | `urlParams` | allow `?disk=` style overrides in the page address | `true` |
@@ -346,7 +414,7 @@ any tape, cartridge or file it can't look inside, gets +35K.
 | Esc | RUN/STOP |
 | Page Up, F12 | RESTORE |
 | Tab, Left Alt | C= |
-| Ctrl | CTRL |
+| Ctrl | CTRL (joystick fire while the keyboard joystick is on) |
 | Home / End | CLR/HOME / shift+CLR/HOME |
 | Backspace, Delete / Insert | DEL / INST |
 | Cursor keys | cursor (when the keyboard joystick is off) |
@@ -354,10 +422,15 @@ any tape, cartridge or file it can't look inside, gets +35K.
 | F9 | keyboard joystick on or off |
 | F10 | warp |
 | F11 | fullscreen |
+| Shift+F9 / Shift+F10 | save / load the last save slot used |
 
 Typing is symbolic: what is printed on your key is what the VIC types. Paste text
-(Ctrl+V) to type it into BASIC. Gamepads work automatically. Players can change the
-joystick keys in the settings panel.
+(Ctrl+V) to type it into BASIC. Gamepads work automatically.
+
+Players can change the joystick keys in the settings panel. Each direction and fire
+has a primary and a secondary key: click one, then press the key to use (Backspace
+clears it, Esc cancels). A key given to one direction is taken off any other. After
+a change the direction keeps just those two keys.
 
 ---
 

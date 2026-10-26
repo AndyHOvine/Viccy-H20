@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const tests = ['boot.mjs', 'drive.mjs', 'tape.mjs', 'media.mjs', 'cpu.mjs'];
+const tests = ['boot.mjs', 'drive.mjs', 'tape.mjs', 'media.mjs', 'state.mjs', 'cpu.mjs'];
 let failed = 0;
 for (const t of tests) {
   const file = fileURLToPath(new URL(t, import.meta.url));

@@ -32,10 +32,12 @@ export const VIC_TIMING = {
   pal: {
     clock: 1108405, cyclesPerLine: 71, linesPerFrame: 312, lineWidth: 284,
     visibleX: 47, visibleW: 233, visibleY: 9, visibleH: 303,
+    windowX: 27, windowY: -1,
   },
   ntsc: {
     clock: 1022727, cyclesPerLine: 65, linesPerFrame: 261, lineWidth: 260,
     visibleX: 48, visibleW: 200, visibleY: 8, visibleH: 253,
+    windowX: 43, windowY: -2,
   },
 };
 
@@ -90,6 +92,16 @@ export class Vic {
     this.charShift = 3 + dbl;
     this.screenBase = ((r[5] & 0xF0) << 6) | ((r[2] & 0x80) << 2);
     this.charBase = (r[5] & 0x0F) << 10;
+  }
+
+  screenWindow() {
+    const t = this.timing;
+    return {
+      x: this.originX * 4 + t.windowX,
+      y: this.originY * 2 + t.windowY,
+      w: this.numCols * 8,
+      h: this.numRows << this.charShift,
+    };
   }
 
   read(addr) {

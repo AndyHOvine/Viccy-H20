@@ -31,7 +31,7 @@ export const DEFAULT_JOY_KEYS = {
   down: ['ArrowDown', 'Numpad2', 'Numpad5'],
   left: ['ArrowLeft', 'Numpad4'],
   right: ['ArrowRight', 'Numpad6'],
-  fire: ['ControlRight', 'IntlBackslash', 'Backslash', 'Numpad0', 'AltRight'],
+  fire: ['ControlLeft', 'ControlRight', 'Numpad0', 'AltRight'],
   upleft: ['Numpad7'], upright: ['Numpad9'], downleft: ['Numpad1'], downright: ['Numpad3'],
 };
 
@@ -139,7 +139,7 @@ export class Input {
 
   keyDown(e) {
     if (!this.enabled) return;
-    const hk = this.hotkeys[e.code];
+    const hk = (e.shiftKey && this.hotkeys['Shift+' + e.code]) || this.hotkeys[e.code];
     if (hk && !e.repeat) { e.preventDefault(); hk(); return; }
     if (e.metaKey) return;
     if (this.joyKeysEnabled && this.joyKeyMap.has(e.code)) {

@@ -14,6 +14,8 @@ for (const [name, col, row] of LAYOUT) VIC_KEYS[name] = col * 8 + row;
 
 export const RESTORE = 'RESTORE';
 
+export const SHIFTED_KEYS = { F2: 'F1', F4: 'F3', F6: 'F5', F8: 'F7', CRSRUP: 'CRSRDOWN', CRSRLEFT: 'CRSRRIGHT' };
+
 export const CHAR_TO_KEYS = (() => {
   const m = {};
   for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {

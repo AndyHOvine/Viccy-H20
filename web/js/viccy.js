@@ -6,6 +6,8 @@ import { FILTER_DEFAULTS } from './host/crtfilter.js';
 import { Audio } from './host/audio.js';
 import { Input, DEFAULT_JOY_KEYS } from './host/input.js';
 import { createUi } from './host/ui.js';
+import { SaveStates } from './host/savestates.js';
+import { paletteRgb } from './host/palettes.js';
 
 export const DEFAULTS = {
   romPath: 'roms/',
@@ -26,8 +28,9 @@ export const DEFAULTS = {
   ui: {
     toolbar: true, settings: true, minimal: false, clickToStart: true, touchControls: 'auto',
     title: 'VIC-20', allowFileDrop: true, touchKeys: ['F1', 'F3', 'F5', 'F7', 'SPACE', 'RETURN', 'Y', 'N'],
+    saveStates: true,
   },
-  hotkeys: { joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '' },
+  hotkeys: { joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '', saveState: 'Shift+F9', loadState: 'Shift+F10' },
   persist: true,
   persistShared: true,
   urlParams: true,
@@ -56,8 +59,18 @@ async function fetchBytes(url) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+function fingerprint(bytes) {
+  let h = 0x811C9DC5;
+  for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0') + bytes.length.toString(16);
+}
+
 function fileName(url) {
   return decodeURIComponent(String(url).split(/[?#]/)[0].split('/').pop());
+}
+
+function touchKeyList(s) {
+  return s.toLowerCase() === 'none' ? [] : s.split(',').map((k) => k.trim()).filter(Boolean);
 }
 
 function urlOptions() {
@@ -69,16 +82,18 @@ function urlOptions() {
   if (Object.keys(media).length) o.media = media;
   if (p.has('model')) o.model = p.get('model');
   if (p.has('memory')) o.memory = p.get('memory');
-  if (p.has('crt') || p.has('palette') || p.has('filter')) {
+  if (p.has('crt') || p.has('palette') || p.has('filter') || p.has('border')) {
     o.video = {};
     if (p.has('crt')) o.video.crt = p.get('crt') !== '0';
     if (p.has('filter')) o.video.filter = p.get('filter') !== '0';
     if (p.has('palette')) o.video.palette = p.get('palette');
+    if (p.has('border')) o.video.border = p.get('border');
   }
-  if (p.has('title') || p.has('minimal')) {
+  if (p.has('title') || p.has('minimal') || p.has('touchkeys')) {
     o.ui = {};
     if (p.has('title')) o.ui.title = p.get('title');
     if (p.has('minimal')) o.ui.minimal = p.get('minimal') !== '0';
+    if (p.has('touchkeys')) o.ui.touchKeys = touchKeyList(p.get('touchkeys'));
   }
   if (p.has('joykeys')) o.joystick = { keyboard: p.get('joykeys') !== '0' };
   if (p.has('drive')) o.drive = { mode: p.get('drive') };
@@ -108,6 +123,9 @@ export class Viccy {
     this.warp = false;
     this.started = false;
     this.media = { disk: null, tape: null, prg: null, carts: [] };
+    this.mediaIds = new WeakMap();
+    this.states = new SaveStates();
+    this.quickSlot = 1;
     this.listeners = {};
   }
 
@@ -207,6 +225,10 @@ export class Viccy {
     if (h.warp && !minimal) hk[h.warp] = () => this.setWarp(!this.warp);
     if (h.fullscreen) hk[h.fullscreen] = () => this.ui.toggleFullscreen();
     if (h.reset && !minimal) hk[h.reset] = () => this.reset();
+    if (this.opts.ui.saveStates) {
+      if (h.saveState) hk[h.saveState] = () => this.saveState(this.quickSlot);
+      if (h.loadState) hk[h.loadState] = () => this.loadState(this.quickSlot);
+    }
   }
 
   async start() {
@@ -236,12 +258,16 @@ export class Viccy {
     for (const it of items) {
       let type = forceType && forceType !== 'zip' ? forceType : it.type;
       if (type === 'prg' && it.type === 'cart') type = 'cart';
-      if (type === 'disk') this.media.disk = new D64(it.data);
-      else if (type === 'tape') this.media.tape = it.data;
-      else if (type === 'prg') this.media.prg = toPrg(it.name, it.data);
+      const id = fingerprint(it.data);
+      if (type === 'disk') this.mediaIds.set(this.media.disk = new D64(it.data), id);
+      else if (type === 'tape') this.mediaIds.set(this.media.tape = it.data, id);
+      else if (type === 'prg') this.mediaIds.set(this.media.prg = toPrg(it.name, it.data), id);
       else if (type === 'cart') {
         if (!carts) carts = [];
-        carts.push(...parseCartridge(it.name, it.data, address));
+        for (const c of parseCartridge(it.name, it.data, address)) {
+          this.mediaIds.set(c, id + c.addr.toString(16));
+          carts.push(c);
+        }
       }
       added.push(type);
     }
@@ -390,12 +416,14 @@ export class Viccy {
     this.ui.update();
   }
 
-  setJoystickKey(dir, code) {
+  setJoystickKey(dir, code, slot = 0) {
     const map = {};
     for (const [d, codes] of Object.entries(this.input.joyKeyConfig)) {
       map[d] = [].concat(codes).filter((c) => c !== code);
     }
-    map[dir] = [code];
+    const pair = [].concat(this.input.joyKeyConfig[dir] || []).slice(0, 2);
+    pair[slot] = code;
+    map[dir] = pair.filter((c, i) => c && (c !== code || i === slot));
     this.input.setJoyKeys(map);
     this.savePref('joyKeyMap', map);
   }
@@ -434,6 +462,91 @@ export class Viccy {
 
   diskImage() { return this.machine.diskImage(); }
 
+  gameId() {
+    const m = this.media;
+    const ids = [m.disk, m.tape, m.prg, ...m.carts].filter(Boolean).map((x) => this.mediaIds.get(x) || 'x');
+    return ids.length ? ids.join('+') : 'basic';
+  }
+
+  listStates() { return this.states.list(this.gameId()); }
+
+  async saveState(slot) {
+    try {
+      const state = this.machine.saveState();
+      await this.states.save(this.gameId(), slot, { time: Date.now(), thumb: this.thumbnail() }, state);
+      this.quickSlot = slot;
+      this.ui.message(`Saved to slot ${slot}`, 1500);
+    } catch (e) {
+      console.error(e);
+      this.ui.message(`Could not save: ${e.message || e}`, 4000);
+    }
+    this.ui.refreshStates();
+  }
+
+  async loadState(slot) {
+    try {
+      const state = await this.states.load(this.gameId(), slot);
+      if (!state) { this.ui.message(`Slot ${slot} is empty`, 1500); return false; }
+      this.restoreState(state);
+      this.quickSlot = slot;
+      this.ui.message(`Loaded slot ${slot}`, 1500);
+      return true;
+    } catch (e) {
+      console.error(e);
+      this.ui.message(`Could not load: ${e.message || e}`, 4000);
+      return false;
+    } finally {
+      this.ui.refreshStates();
+    }
+  }
+
+  async deleteState(slot) {
+    try { await this.states.remove(this.gameId(), slot); } catch (e) { console.error(e); }
+    this.ui.refreshStates();
+  }
+
+  restoreState(state) {
+    const m = new Vic20({ roms: this.roms, model: state.model, memory: state.memory, sampleRate: this.audio.sampleRate });
+    m.setCartridges(this.media.carts);
+    m.loadState(state);
+    if (m.disk && this.media.disk) {
+      this.mediaIds.set(m.disk, this.mediaIds.get(this.media.disk));
+      this.media.disk = m.disk;
+    }
+    this.model = state.model;
+    this.machine = m;
+    this.input.setMachine(m);
+    this.renderer.configure({ model: this.model });
+    this.audio.clear();
+    this.lastTime = 0;
+    this.acc = 0;
+    this.renderer.draw(m.vic.fb, m.vic.lineWidth, m.timing.linesPerFrame, m.vic.screenWindow());
+    this.ui.update();
+    this.ui.refreshPanel();
+    this.emit('boot', m);
+  }
+
+  thumbnail() {
+    const r = this.renderer, c = r.crop, vic = this.machine.vic;
+    const rgb = paletteRgb(r.palette, this.model === 'ntsc');
+    const src = document.createElement('canvas');
+    src.width = c.w; src.height = c.h;
+    const img = src.getContext('2d').createImageData(c.w, c.h);
+    let o = 0;
+    for (let y = 0; y < c.h; y++) {
+      for (let x = 0, i = (c.y + y) * vic.lineWidth + c.x; x < c.w; x++, i++) {
+        const p = (vic.fb[i] & 15) * 3;
+        img.data[o++] = rgb[p]; img.data[o++] = rgb[p + 1]; img.data[o++] = rgb[p + 2]; img.data[o++] = 255;
+      }
+    }
+    src.getContext('2d').putImageData(img, 0, 0);
+    const out = document.createElement('canvas');
+    out.height = 96;
+    out.width = Math.round(96 * r.displayAspect);
+    out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
+    return out.toDataURL('image/png');
+  }
+
   loop(now) {
     requestAnimationFrame(this.loop);
     const m = this.machine;
@@ -468,7 +581,7 @@ export class Viccy {
       if (m.sound.enabled) this.audio.push(samples);
     }
     if (ran) {
-      this.renderer.draw(m.vic.fb, m.vic.lineWidth, m.timing.linesPerFrame);
+      this.renderer.draw(m.vic.fb, m.vic.lineWidth, m.timing.linesPerFrame, m.vic.screenWindow());
       this.ui.tick(autoWarp || this.warp);
     }
   }

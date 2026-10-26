@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
 let name = null;
@@ -11,36 +11,57 @@ for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--name') name = args[++i];
   else if (/^[a-z]+=/i.test(a)) settings[a.slice(0, a.indexOf('=')).toLowerCase()] = a.slice(a.indexOf('=') + 1);
-  else gameFile = path.resolve(a);
+  else if (gameFile) {
+    console.error(`Only one game file can be given (got ${path.basename(gameFile)} and ${a}).`);
+    console.error('Put names with spaces in quotes: --name "My Game"');
+    process.exit(1);
+  } else gameFile = path.resolve(a);
 }
 if (gameFile && !fs.existsSync(gameFile)) {
   console.error(`File not found: ${gameFile}`);
   process.exit(1);
 }
-if (!name) {
-  name = gameFile
-    ? path.basename(gameFile, path.extname(gameFile)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'game'
-    : 'viccy-h20';
+const SETTINGS = ['memory', 'model', 'title', 'joykeys', 'crt', 'filter', 'palette', 'border', 'drive', 'autostart', 'minimal', 'touchkeys'];
+const unknown = Object.keys(settings).filter((k) => !SETTINGS.includes(k));
+if (unknown.length) {
+  console.error(`Unknown setting: ${unknown.join(', ')}. Settings are: ${SETTINGS.join(', ')}.`);
+  process.exit(1);
 }
+if (settings.touchkeys && settings.touchkeys.toLowerCase() !== 'none') {
+  const { VIC_KEYS, SHIFTED_KEYS } = await import('../web/js/emu/keys.js');
+  const bad = settings.touchkeys.split(',').map((k) => k.trim().toUpperCase())
+    .filter((k) => k && VIC_KEYS[k] === undefined && !SHIFTED_KEYS[k] && k !== 'RESTORE');
+  if (bad.length) {
+    console.error(`Unknown touch key: ${bad.join(', ')}. Use VIC key names such as F1, F2, SPACE, RETURN, Y, N, RUNSTOP, CRSRUP.`);
+    process.exit(1);
+  }
+}
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+if (!name) name = gameFile ? slug(path.basename(gameFile, path.extname(gameFile))) || 'game' : 'viccy-h20';
 
-const bundledName = gameFile ? name + path.extname(gameFile).toLowerCase() : null;
+const bundledName = gameFile ? (slug(name) || 'game') + path.extname(gameFile).toLowerCase() : null;
 
 function gameConfig() {
   const flag = (v) => !['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
-  const game = { media: { file: 'games/' + bundledName } };
+  const game = bundledName ? { media: { file: 'games/' + bundledName } } : {};
   if (settings.memory) game.memory = settings.memory;
   if (settings.model) game.model = settings.model;
-  if (settings.title || settings.minimal !== undefined) {
+  if (settings.title || settings.minimal !== undefined || settings.touchkeys !== undefined) {
     game.ui = {};
     if (settings.title) game.ui.title = settings.title;
     if (settings.minimal !== undefined) game.ui.minimal = flag(settings.minimal);
+    if (settings.touchkeys !== undefined) {
+      game.ui.touchKeys = settings.touchkeys.toLowerCase() === 'none' ? []
+        : settings.touchkeys.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean);
+    }
   }
   if (settings.joykeys !== undefined) game.joystick = { keyboard: flag(settings.joykeys) };
-  if (settings.crt !== undefined || settings.palette || settings.filter !== undefined) {
+  if (settings.crt !== undefined || settings.palette || settings.filter !== undefined || settings.border) {
     game.video = {};
     if (settings.crt !== undefined) game.video.crt = flag(settings.crt);
     if (settings.filter !== undefined) game.video.filter = flag(settings.filter);
     if (settings.palette) game.video.palette = settings.palette;
+    if (settings.border) game.video.border = settings.border;
   }
   if (settings.drive) game.drive = { mode: settings.drive };
   if (settings.autostart !== undefined) {
@@ -81,6 +102,22 @@ for (const rel of walk(src)) {
 if (gameFile) {
   fs.mkdirSync(path.join(outDir, 'games'), { recursive: true });
   fs.copyFileSync(gameFile, path.join(outDir, 'games', bundledName));
+  if (path.relative(path.join(src, 'games'), path.dirname(gameFile)) === '' && path.basename(gameFile) !== bundledName) {
+    fs.rmSync(path.join(outDir, 'games', path.basename(gameFile)));
+  }
+} else {
+  const base = (await import(pathToFileURL(path.join(src, 'config.js')).href)).default;
+  const m = base.media || {};
+  const used = [m.disk, m.tape, m.prg, m.file, ...(m.carts || [])].filter(Boolean)
+    .map((c) => path.basename(typeof c === 'string' ? c : c.url || ''));
+  const unused = fs.readdirSync(path.join(src, 'games')).filter((f) => !f.startsWith('.') && !used.includes(f));
+  if (unused.length) {
+    console.warn(`Warning: web/config.js does not load ${unused.map((f) => 'games/' + f).join(', ')}.`);
+    console.warn(`  Set media in web/config.js, or give the file: build.bat web\\games\\${unused[0]} title="..."`);
+  }
+}
+
+if (gameFile || Object.keys(settings).length) {
   fs.renameSync(path.join(outDir, 'config.js'), path.join(outDir, 'config.base.js'));
   fs.writeFileSync(path.join(outDir, 'config.js'),
     `import base from './config.base.js';\n\n` +

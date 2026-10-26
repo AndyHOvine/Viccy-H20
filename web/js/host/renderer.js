@@ -164,6 +164,7 @@ export class Renderer {
     this.model = 'pal';
     this.palette = 'mike-pal';
     this.border = 'normal';
+    this.window = null;
     this.aspect = 'tv';
     this.integerScale = false;
     this.crt = { ...CRT_DEFAULTS };
@@ -228,6 +229,7 @@ export class Renderer {
   }
 
   configure(opts) {
+    if (opts.model !== undefined && opts.model !== this.model) this.window = null;
     for (const k of ['model', 'palette', 'border', 'aspect', 'integerScale']) {
       if (opts[k] !== undefined) this[k] = opts[k];
     }
@@ -238,7 +240,20 @@ export class Renderer {
 
   get crop() {
     const c = CROPS[this.model];
+    if (this.border === 'none') return this.window || c.tight;
     return c[this.border] || c.normal;
+  }
+
+  setWindow(win) {
+    const full = CROPS[this.model].full;
+    const x = Math.max(win.x, full.x), y = Math.max(win.y, full.y);
+    const w = Math.min(win.x + win.w, full.x + full.w) - x;
+    const h = Math.min(win.y + win.h, full.y + full.h) - y;
+    if (w < 8 || h < 8) return;
+    const cur = this.window;
+    if (cur && cur.x === x && cur.y === y && cur.w === w && cur.h === h) return;
+    this.window = { x, y, w, h };
+    this.layout();
   }
 
   get displayAspect() {
@@ -313,7 +328,8 @@ export class Renderer {
     this.dirty = true;
   }
 
-  draw(fb, lineWidth, lines) {
+  draw(fb, lineWidth, lines, win) {
+    if (this.border === 'none' && win) this.setWindow(win);
     if (this.dirty) {
       this.uploadPalette();
       this.layout();

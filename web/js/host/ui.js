@@ -1,7 +1,9 @@
 import { PALETTE_NAMES } from './palettes.js';
 import { FILTER_RANGES, MASK_SHAPES } from './crtfilter.js';
 import { JOY } from '../emu/vic20.js';
+import { VIC_KEYS, SHIFTED_KEYS } from '../emu/keys.js';
 import { keyLabel } from './input.js';
+import { SLOT_COUNT } from './savestates.js';
 
 const ICONS = {
   reset: '<path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/>',
@@ -16,6 +18,7 @@ const ICONS = {
   fullscreen: '<path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/>',
   pause: '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>',
   play: '<path d="M7 4l13 8-13 8z"/>',
+  states: '<path fill-rule="evenodd" d="M3 3h14l4 4v14H3zm3 2v5h10V5zm6 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>',
 };
 
 function icon(name) {
@@ -38,7 +41,23 @@ const MEMORY_LABELS = [
   ['24k', '+24K'], ['32k', '+32K (blocks 1,2,3,5)'], ['35k', '+35K (all)'],
 ];
 
-const TOUCH_KEY_LABELS = { RUNSTOP: 'RUN/STOP', RETURN: 'RETURN', SPACE: 'SPACE', CBM: 'C=', CRSRDOWN: '▼', CRSRRIGHT: '▶' };
+const TOUCH_KEY_LABELS = {
+  RUNSTOP: 'RUN/STOP', RETURN: 'RETURN', SPACE: 'SPACE', CBM: 'C=', CRSRDOWN: '▼', CRSRRIGHT: '▶',
+  CRSRUP: '▲', CRSRLEFT: '◀', LSHIFT: 'SHIFT', RSHIFT: 'SHIFT', HOME: 'CLR/HOME', LEFTARROW: '←', UPARROW: '↑', POUND: '£',
+};
+
+function touchKey(spec) {
+  const s = typeof spec === 'string' ? { key: spec } : spec || {};
+  let keys = [].concat(s.keys || s.key || []).map((k) => String(k).toUpperCase());
+  const name = keys.length === 1 ? keys[0] : null;
+  if (name && SHIFTED_KEYS[name]) keys = ['LSHIFT', SHIFTED_KEYS[name]];
+  const bad = keys.filter((k) => VIC_KEYS[k] === undefined && k !== 'RESTORE');
+  if (!keys.length || bad.length) {
+    console.warn(`ui.touchKeys: unknown VIC key ${bad.join(', ') || JSON.stringify(spec)}`);
+    return null;
+  }
+  return { keys, label: s.label || TOUCH_KEY_LABELS[name] || name || keys.join('+') };
+}
 
 export function createUi(app, container) {
   const o = app.opts.ui;
@@ -93,6 +112,7 @@ export function createUi(app, container) {
   const pickFile = (e) => { loadAndRun = !(e && e.shiftKey); fileInput.click(); };
   const bLoad = btn('load', 'Load file (Shift+click: attach without running)', pickFile);
   const bUnload = btn('unload', 'Unload (start in BASIC)', () => app.unload());
+  const bStates = btn('states', 'Save and load', () => toggleStates());
   const bSettings = btn('settings', 'Settings', () => toggleSettings());
   const bFull = btn('fullscreen', 'Fullscreen (F11)', () => toggleFullscreen());
   const left = el('div', { class: 'viccy-toolbar-group' });
@@ -102,6 +122,7 @@ export function createUi(app, container) {
   if (full) left.append(bReset);
   left.append(bPause, bJoy);
   if (full) left.append(bWarp);
+  if (o.saveStates) right.append(bStates);
   right.append(bCrt);
   right.append(bMute);
   if (canLoad) right.append(bLoad);
@@ -115,6 +136,72 @@ export function createUi(app, container) {
 
   const panel = el('div', { class: 'viccy-panel', hidden: '' });
   container.append(panel);
+
+  const statesPanel = el('div', { class: 'viccy-panel viccy-states', hidden: '' });
+  container.append(statesPanel);
+  let pausedBefore = false;
+
+  function slotTime(t) {
+    const d = new Date(t);
+    const today = new Date().toDateString() === d.toDateString();
+    return today ? 'Today ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function buildStates() {
+    const h = app.opts.hotkeys;
+    statesPanel.innerHTML = '';
+    const head = el('div', { class: 'viccy-panel-head' }, '<h2>Save and load</h2>');
+    head.append(el('button', { class: 'viccy-btn viccy-close', type: 'button', 'aria-label': 'Close', onclick: () => toggleStates(false) }, '✕'));
+    const list = el('div', { class: 'viccy-slots' });
+    const help = el('p', { class: 'viccy-help' });
+    help.textContent = `${h.saveState ? h.saveState + ' saves and ' : ''}${h.loadState ? h.loadState + ' loads ' : ''}` +
+      `${h.saveState || h.loadState ? 'the last slot used. ' : ''}Saves are kept in this browser, separately for each game.`;
+    statesPanel.append(head, list, help);
+    let slots;
+    try {
+      slots = await app.listStates();
+    } catch (e) {
+      list.textContent = String(e.message || e);
+      return;
+    }
+    for (let i = 1; i <= SLOT_COUNT; i++) {
+      const s = slots[i - 1];
+      const card = el('div', { class: 'viccy-slot' + (s ? '' : ' empty') + (i === app.quickSlot ? ' quick' : '') });
+      const pic = el('div', { class: 'viccy-slot-pic' });
+      if (s && s.thumb) pic.append(el('img', { src: s.thumb, alt: '' }));
+      const info = el('div', { class: 'viccy-slot-info' }, '<strong></strong><span></span>');
+      info.firstChild.textContent = `Slot ${i}`;
+      info.lastChild.textContent = s ? slotTime(s.time) : 'Empty';
+      const acts = el('div', { class: 'viccy-slot-acts' });
+      acts.append(action('Save', () => app.saveState(i)));
+      if (s) {
+        acts.append(action('Load', async () => { if (await app.loadState(i)) toggleStates(false); }));
+        const del = action('✕', () => { if (confirm(`Delete the save in slot ${i}?`)) app.deleteState(i); });
+        del.title = 'Delete';
+        acts.append(del);
+      }
+      card.append(pic, info, acts);
+      list.append(card);
+    }
+  }
+
+  function toggleStates(show) {
+    const vis = show ?? statesPanel.hidden;
+    if (vis === !statesPanel.hidden) return;
+    if (vis) {
+      toggleSettings(false);
+      pausedBefore = app.paused;
+      app.pause(true);
+      buildStates();
+    } else if (!pausedBefore) {
+      app.pause(false);
+    }
+    statesPanel.hidden = !vis;
+    bStates.classList.toggle('on', vis);
+    app.input.enabled = !vis;
+    if (vis) app.input.releaseAll();
+  }
 
   function select(label, options, value, onchange) {
     const row = el('label', { class: 'viccy-row' }, `<span></span>`);
@@ -185,26 +272,35 @@ export function createUi(app, container) {
     const row = el('div', { class: 'viccy-row' }, '<span></span>');
     row.firstChild.textContent = 'Joystick ' + (dir === 'fire' ? 'fire' : dir);
     const codes = [].concat(app.input.joyKeyConfig[dir] || []);
-    const b = el('button', { class: 'viccy-action viccy-keybind', type: 'button', title: 'Click, then press a key' });
-    b.textContent = codes.length ? codes.map(keyLabel).join(' / ') : 'none';
-    b.addEventListener('click', () => {
-      b.textContent = 'Press a key… (Esc cancels)';
-      const capture = (e) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        window.removeEventListener('keydown', capture, true);
-        if (e.code === 'Escape') { buildPanel(); return; }
-        if (Object.values(app.opts.hotkeys).includes(e.code)) {
-          ui.message(`${keyLabel(e.code)} is already a hotkey`, 2000);
+    const pair = el('div', { class: 'viccy-keypair' });
+    for (const slot of [0, 1]) {
+      const b = el('button', {
+        class: 'viccy-action viccy-keybind', type: 'button',
+        title: `${slot ? 'Secondary' : 'Primary'} key: click, then press a key`,
+      });
+      b.textContent = codes[slot] ? keyLabel(codes[slot]) : slot ? '+' : 'none';
+      if (slot && codes.length > 2) b.title += `. Also: ${codes.slice(2).map(keyLabel).join(', ')}`;
+      b.addEventListener('click', () => {
+        b.textContent = 'Press a key';
+        const capture = (e) => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          window.removeEventListener('keydown', capture, true);
+          if (e.code === 'Escape') { buildPanel(); return; }
+          if (e.code === 'Backspace') { app.setJoystickKey(dir, null, slot); buildPanel(); return; }
+          if (Object.values(app.opts.hotkeys).includes(e.code)) {
+            ui.message(`${keyLabel(e.code)} is already a hotkey`, 2000);
+            buildPanel();
+            return;
+          }
+          app.setJoystickKey(dir, e.code, slot);
           buildPanel();
-          return;
-        }
-        app.setJoystickKey(dir, e.code);
-        buildPanel();
-      };
-      window.addEventListener('keydown', capture, true);
-    });
-    row.append(b);
+        };
+        window.addEventListener('keydown', capture, true);
+      });
+      pair.append(b);
+    }
+    row.append(pair);
     return row;
   }
 
@@ -239,7 +335,7 @@ export function createUi(app, container) {
       section('Display',
         check('CRT emulation', r.crt.enabled, (v) => app.setVideo({ crt: { enabled: v } })),
         select('Palette', PALETTE_NAMES.map((n) => [n, n === 'vice' ? 'VICE (internal)' : n]), r.palette, (v) => app.setVideo({ palette: v })),
-        select('Borders', [['normal', 'Normal'], ['full', 'Full'], ['tight', 'Small']], r.border, (v) => app.setVideo({ border: v })),
+        select('Borders', [['normal', 'Normal'], ['full', 'Full'], ['tight', 'Small'], ['none', 'None']], r.border, (v) => app.setVideo({ border: v })),
         select('Aspect ratio', [['tv', 'TV (non-square pixels)'], ['square', 'Square pixels']], r.aspect, (v) => app.setVideo({ aspect: v })),
         check('Integer scaling', r.integerScale, (v) => app.setVideo({ integerScale: v })),
         slider('Blur', 'blur', 0, 1000),
@@ -280,6 +376,7 @@ export function createUi(app, container) {
         select('Keyboard mapping', [['symbolic', 'Symbolic (type what you see)'], ['positional', 'Positional']],
           app.input.keyboardMap, (v) => app.setKeyboardMap(v)),
         el('p', { class: 'viccy-help' },
+          'Joystick keys: a primary and a secondary key each. Click one, then press a key (Backspace clears, Esc cancels). ' +
           'VIC keys: Esc = RUN/STOP, Page Up or F12 = RESTORE, Tab = C=, Home = CLR/HOME, F1–F8 as on the VIC. ' +
           'Gamepads work automatically. Paste text to type it into BASIC.'),
       ),
@@ -317,7 +414,7 @@ export function createUi(app, container) {
 
   function toggleSettings(show) {
     const vis = show ?? panel.hidden;
-    if (vis) buildPanel();
+    if (vis) { toggleStates(false); buildPanel(); }
     panel.hidden = !vis;
     app.input.enabled = !vis;
     if (vis) app.input.releaseAll();
@@ -337,11 +434,25 @@ export function createUi(app, container) {
     const stick = el('div', { class: 'viccy-stick' }, '<div class="viccy-knob"></div>');
     const fire = el('div', { class: 'viccy-fire' }, 'FIRE');
     const keys = el('div', { class: 'viccy-touch-keys' });
-    for (const k of o.touchKeys || []) {
+    for (const spec of o.touchKeys || []) {
+      const t = touchKey(spec);
+      if (!t) continue;
       const b = el('button', { type: 'button', class: 'viccy-key' });
-      b.textContent = TOUCH_KEY_LABELS[k] || k;
-      const down = (e) => { e.preventDefault(); app.start(); app.machine.key(k, true); };
-      const up = (e) => { e.preventDefault(); app.machine.key(k, false); };
+      b.textContent = t.label;
+      let held = false;
+      const down = (e) => {
+        e.preventDefault();
+        app.start();
+        if (held) return;
+        held = true;
+        for (const k of t.keys) app.machine.key(k, true);
+      };
+      const up = (e) => {
+        e.preventDefault();
+        if (!held) return;
+        held = false;
+        for (const k of t.keys) app.machine.key(k, false);
+      };
       b.addEventListener('pointerdown', down);
       b.addEventListener('pointerup', up);
       b.addEventListener('pointercancel', up);
@@ -419,6 +530,9 @@ export function createUi(app, container) {
     refreshPanel() {
       if (!panel.hidden) buildPanel();
     },
+    refreshStates() {
+      if (!statesPanel.hidden) buildStates();
+    },
     tick(warping) {
       const m = app.machine;
       led.classList.toggle('on', !!(m.drive && m.drive.led));
@@ -430,7 +544,10 @@ export function createUi(app, container) {
     attachInput() {
       const begin = () => app.start();
       start.addEventListener('click', begin);
-      window.addEventListener('keydown', () => { if (!app.started && !start.hidden) begin(); });
+      window.addEventListener('keydown', (e) => {
+        if (!app.started && !start.hidden) begin();
+        if (e.code === 'Escape' && !statesPanel.hidden) toggleStates(false);
+      });
       screen.addEventListener('pointerdown', () => { app.start(); canvas.focus({ preventScroll: true }); });
       window.addEventListener('paste', (e) => {
         if (!panel.hidden) return;

@@ -6,6 +6,9 @@ import { Datasette } from './datasette.js';
 import { Drive1541, IecBus, DRIVE_CLOCK } from './drive1541.js';
 import { D64 } from './d64.js';
 import { VIC_KEYS } from './keys.js';
+import { saveFields, loadFields } from './state.js';
+
+const STATE_VERSION = 1;
 
 const P_RAM = 0, P_ROM = 1, P_OPEN = 2, P_IO = 3, P_COLOR = 4;
 
@@ -468,6 +471,66 @@ export class Vic20 {
       if (relocate) this.relinkBasic();
     }
     return { addr, end, basic: addr === basicStart };
+  }
+
+  saveState() {
+    const drive = this.drive, ds = this.datasette;
+    return {
+      version: STATE_VERSION,
+      model: this.model,
+      memory: this.memory.slice(),
+      machine: saveFields(this, ['keyCount', 'matrix', 'keyQueue', 'joy', 'frameDone', 'sampleRate']),
+      cpu: saveFields(this.cpu, ['trapFlags']),
+      vic: saveFields(this.vic),
+      sound: saveFields(this.sound, ['clockHz', 'sampleRate', 'cps', 'lowBeta', 'highBeta', 'out', 'outLen', 'enabled']),
+      via1: saveFields(this.via1),
+      via2: saveFields(this.via2),
+      iec: saveFields(this.iec),
+      datasette: { ...saveFields(ds, ['data']), data: ds.data ? ds.data.slice() : null },
+      disk: this.disk ? this.disk.data.slice() : null,
+      drive: drive && {
+        ...saveFields(drive, ['rom']),
+        cpu: saveFields(drive.cpu),
+        via1: saveFields(drive.via1),
+        via2: saveFields(drive.via2),
+        tracks: drive.tracks.map((t, i) => (t && !(i & 1) ? t.slice() : null)),
+        dirty: [...drive.dirty],
+      },
+    };
+  }
+
+  loadState(s) {
+    if (s.version !== STATE_VERSION || s.model !== this.model) throw new Error('Incompatible save state');
+    this.memory = s.memory.slice();
+    loadFields(this, s.machine);
+    loadFields(this.cpu, s.cpu);
+    loadFields(this.vic, s.vic);
+    loadFields(this.sound, s.sound);
+    this.sound.outLen = 0;
+    loadFields(this.via1, s.via1);
+    loadFields(this.via2, s.via2);
+    loadFields(this.iec, s.iec);
+    const { data, ...tape } = s.datasette;
+    loadFields(this.datasette, tape);
+    this.datasette.data = data ? data.slice() : null;
+    this.disk = s.disk ? new D64(s.disk) : null;
+    this.driveEnabled = !!s.drive;
+    this.setupDrive();
+    if (s.drive) {
+      const d = this.drive;
+      loadFields(d, s.drive);
+      loadFields(d.cpu, s.drive.cpu);
+      loadFields(d.via1, s.drive.via1);
+      loadFields(d.via2, s.drive.via2);
+      d.disk = this.disk;
+      d.tracks = [];
+      s.drive.tracks.forEach((t, i) => { if (t) d.tracks[i] = d.tracks[i + 1] = t.slice(); });
+      d.dirty = new Set(s.drive.dirty);
+    }
+    this.releaseAllKeys();
+    this.joy = 0;
+    this.keyQueue = [];
+    this.readyHandlers = [];
   }
 
   relinkBasic() {
