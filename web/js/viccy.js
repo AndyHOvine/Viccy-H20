@@ -28,6 +28,7 @@ export const DEFAULTS = {
   ui: {
     toolbar: true, settings: true, minimal: false, clickToStart: true, touchControls: 'auto',
     title: 'VIC-20', allowFileDrop: true, touchKeys: ['F1', 'F3', 'F5', 'F7', 'SPACE', 'RETURN', 'Y', 'N'],
+    touchStick: ['up', 'down', 'left', 'right'], touchFire: ['fire'], touchSlide: false,
     saveStates: true,
   },
   hotkeys: { joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '', saveState: 'Shift+F9', loadState: 'Shift+F10' },
@@ -36,7 +37,8 @@ export const DEFAULTS = {
   urlParams: true,
 };
 
-const PREF_KEYS = ['crt', 'filter', 'joyKeyMap', 'palette', 'border', 'aspect', 'integerScale', 'volume', 'muted', 'joyKeys', 'keyboardMap'];
+const PREF_KEYS = ['crt', 'filter', 'joyKeyMap', 'palette', 'border', 'aspect', 'integerScale', 'volume', 'muted', 'joyKeys', 'keyboardMap',
+  'touchSlide', 'touchLayout'];
 
 const SHARED_PREF_KEYS = ['crt', 'filter', 'palette', 'border', 'aspect', 'integerScale', 'volume', 'muted', 'joyKeys', 'keyboardMap'];
 const SHARED_PREFS_KEY = 'viccy:shared';
@@ -89,11 +91,14 @@ function urlOptions() {
     if (p.has('palette')) o.video.palette = p.get('palette');
     if (p.has('border')) o.video.border = p.get('border');
   }
-  if (p.has('title') || p.has('minimal') || p.has('touchkeys')) {
+  if (p.has('title') || p.has('minimal') || p.has('touchkeys') || p.has('touchstick') || p.has('touchfire') || p.has('touchslide')) {
     o.ui = {};
     if (p.has('title')) o.ui.title = p.get('title');
     if (p.has('minimal')) o.ui.minimal = p.get('minimal') !== '0';
     if (p.has('touchkeys')) o.ui.touchKeys = touchKeyList(p.get('touchkeys'));
+    if (p.has('touchstick')) o.ui.touchStick = touchKeyList(p.get('touchstick'));
+    if (p.has('touchfire')) o.ui.touchFire = touchKeyList(p.get('touchfire'));
+    if (p.has('touchslide')) o.ui.touchSlide = p.get('touchslide') !== '0';
   }
   if (p.has('joykeys')) o.joystick = { keyboard: p.get('joykeys') !== '0' };
   if (p.has('drive')) o.drive = { mode: p.get('drive') };
@@ -119,6 +124,7 @@ export class Viccy {
     this.container = container;
     this.prefsKey = 'viccy:' + location.pathname;
     this.prefs = this.loadPrefs();
+    this.touchSlide = !!this.pref('touchSlide', opts.ui.touchSlide);
     this.paused = false;
     this.warp = false;
     this.started = false;
@@ -431,6 +437,13 @@ export class Viccy {
   resetJoystickKeys() {
     this.input.setJoyKeys(this.opts.joystick.keys);
     this.savePref('joyKeyMap', undefined);
+  }
+
+  setTouchSlide(on) {
+    this.touchSlide = !!on;
+    this.savePref('touchSlide', this.touchSlide);
+    this.ui.message(on ? 'Slide onto buttons ON' : 'Slide onto buttons OFF', 1500);
+    this.ui.update();
   }
 
   setWarp(on) {

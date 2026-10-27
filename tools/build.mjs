@@ -21,18 +21,35 @@ if (gameFile && !fs.existsSync(gameFile)) {
   console.error(`File not found: ${gameFile}`);
   process.exit(1);
 }
-const SETTINGS = ['memory', 'model', 'title', 'joykeys', 'crt', 'filter', 'palette', 'border', 'drive', 'autostart', 'minimal', 'touchkeys'];
+const SETTINGS = ['memory', 'model', 'title', 'joykeys', 'crt', 'filter', 'palette', 'border', 'drive', 'autostart', 'minimal', 'touchkeys', 'touchstick', 'touchfire', 'touchslide'];
 const unknown = Object.keys(settings).filter((k) => !SETTINGS.includes(k));
 if (unknown.length) {
   console.error(`Unknown setting: ${unknown.join(', ')}. Settings are: ${SETTINGS.join(', ')}.`);
   process.exit(1);
 }
-if (settings.touchkeys && settings.touchkeys.toLowerCase() !== 'none') {
-  const { VIC_KEYS, SHIFTED_KEYS } = await import('../web/js/emu/keys.js');
-  const bad = settings.touchkeys.split(',').map((k) => k.trim().toUpperCase())
-    .filter((k) => k && VIC_KEYS[k] === undefined && !SHIFTED_KEYS[k] && k !== 'RESTORE');
+const list = (s) => (s.toLowerCase() === 'none' ? [] : s.split(',').map((k) => k.trim()).filter(Boolean));
+const STICK_DIRECTIONS = ['up', 'down', 'left', 'right'];
+const { VIC_KEYS, SHIFTED_KEYS } = await import('../web/js/emu/keys.js');
+const isVicKey = (k) => VIC_KEYS[k] !== undefined || !!SHIFTED_KEYS[k] || k === 'RESTORE';
+if (settings.touchkeys) {
+  const bad = list(settings.touchkeys).map((k) => k.toUpperCase()).filter((k) => !isVicKey(k));
   if (bad.length) {
     console.error(`Unknown touch key: ${bad.join(', ')}. Use VIC key names such as F1, F2, SPACE, RETURN, Y, N, RUNSTOP, CRSRUP.`);
+    process.exit(1);
+  }
+}
+if (settings.touchstick) {
+  const bad = list(settings.touchstick).filter((d) => !STICK_DIRECTIONS.includes(d.toLowerCase()));
+  if (bad.length) {
+    console.error(`Unknown touch stick direction: ${bad.join(', ')}. Use up, down, left, right, or none.`);
+    process.exit(1);
+  }
+}
+if (settings.touchfire) {
+  const bad = list(settings.touchfire).map((b) => (b.indexOf(':', 1) < 0 ? b : b.slice(0, b.indexOf(':', 1))))
+    .filter((n) => n.toLowerCase() !== 'fire' && !STICK_DIRECTIONS.includes(n.toLowerCase()) && !isVicKey(n.toUpperCase()));
+  if (bad.length) {
+    console.error(`Unknown touch fire button: ${bad.join(', ')}. Use fire, up, down, left, right or a VIC key name, optionally with :label (up:JUMP).`);
     process.exit(1);
   }
 }
@@ -46,14 +63,15 @@ function gameConfig() {
   const game = bundledName ? { media: { file: 'games/' + bundledName } } : {};
   if (settings.memory) game.memory = settings.memory;
   if (settings.model) game.model = settings.model;
-  if (settings.title || settings.minimal !== undefined || settings.touchkeys !== undefined) {
+  if (settings.title || settings.minimal !== undefined || settings.touchkeys !== undefined ||
+      settings.touchstick !== undefined || settings.touchfire !== undefined || settings.touchslide !== undefined) {
     game.ui = {};
     if (settings.title) game.ui.title = settings.title;
     if (settings.minimal !== undefined) game.ui.minimal = flag(settings.minimal);
-    if (settings.touchkeys !== undefined) {
-      game.ui.touchKeys = settings.touchkeys.toLowerCase() === 'none' ? []
-        : settings.touchkeys.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean);
-    }
+    if (settings.touchkeys !== undefined) game.ui.touchKeys = list(settings.touchkeys).map((k) => k.toUpperCase());
+    if (settings.touchstick !== undefined) game.ui.touchStick = list(settings.touchstick).map((d) => d.toLowerCase());
+    if (settings.touchfire !== undefined) game.ui.touchFire = list(settings.touchfire);
+    if (settings.touchslide !== undefined) game.ui.touchSlide = flag(settings.touchslide);
   }
   if (settings.joykeys !== undefined) game.joystick = { keyboard: flag(settings.joykeys) };
   if (settings.crt !== undefined || settings.palette || settings.filter !== undefined || settings.border) {

@@ -88,6 +88,9 @@ Settings you can add after the file:
 | `title` | `title="My Game"` | name on the start screen |
 | `minimal` | `minimal=1` | minimal toolbar |
 | `touchkeys` | `touchkeys=F1,SPACE,Y,N` | VIC keys shown as buttons on phones and tablets, or `none` (see *On-screen keys*) |
+| `touchstick` | `touchstick=left,right` | directions the touch stick gives, or `none` for no stick |
+| `touchfire` | `touchfire=up:JUMP,fire:DASH` | the touch fire buttons, each with an optional label, or `none` |
+| `touchslide` | `touchslide=1` | a finger sliding onto the touch stick or a fire button takes it |
 
 You can also drag a file onto the emulator, or use the folder button in the
 toolbar. Hold **Shift** while doing either to attach the file without running it.
@@ -293,6 +296,61 @@ Key names: `A`–`Z`, `0`–`9`, `F1`–`F8` (F2, F4, F6 and F8 press SHIFT for 
 `POUND`, and `+ - * / = : ; , . @`. A name the emulator does not know is left out,
 with a warning in the browser console (the build stops on one).
 
+### Touch joystick and fire buttons
+
+`ui.touchStick` chooses the directions the touch stick gives. A direction left
+out is never sent. When both directions of an axis are left out, that axis is
+ignored, so a left and right stick gives left or right wherever it is pushed.
+`[]` removes the stick.
+
+`ui.touchFire` lists the round buttons beside the right thumb. Each one gives a
+joystick input (`'fire'`, `'up'`, `'down'`, `'left'` or `'right'`) or holds VIC
+keys down, and can have its own label. For a platform game where up jumps:
+
+```js
+export default {
+  ui: {
+    title: 'Cave Hopper',
+    touchStick: ['left', 'right'],
+    touchFire: [
+      { joy: 'fire', label: 'DASH' },
+      { joy: 'up', label: 'JUMP' },
+      { key: 'SPACE', label: 'BOMB' },
+    ],
+    touchKeys: [],
+  },
+  media: { disk: 'games/cavehopper.d64' },
+};
+```
+
+Each entry is `{ joy, label }` for a joystick input, `{ key, label }` for a VIC key,
+or `{ keys: [...], label }` for keys pressed together. A button can also be written
+as a string: `'fire'`, `'up:JUMP'`, `'SPACE:BOMB'`. A joystick name comes before
+a key name, so `'up'` is joystick up. The first button is at the bottom right, and
+the buttons fill to the left and upwards from there. The default is one `FIRE`
+button. `[]` removes them.
+
+With the build: `build.bat mygame.d64 touchstick=left,right touchfire=fire:DASH,up:JUMP`.
+
+### Sliding onto the controls, and moving them
+
+With `ui.touchSlide: true`, a finger that slides onto the stick or a fire button
+takes it, as if it had landed there, so a thumb can roll from one button to the
+next. A finger between two buttons presses both. Sliding off a button lets it go.
+The stick still follows one finger at a time. Without slide (the default), a
+finger keeps whatever it landed on until it lifts. With the build: `touchslide=1`.
+
+On touch screens the toolbar has two more buttons:
+
+- **Slide** switches sliding on and off for the player. The game's setting is the
+  starting point; the player's choice is remembered in their browser.
+- **Move** lets the player drag the stick and each fire button to where their
+  thumbs want them. The game pauses until they tap **Done**; **Reset** puts the
+  controls back. The stick keeps its distance from the left side and the buttons
+  from the right, so the layout suits any screen width. Portrait and landscape
+  are set up separately, and the layout is remembered in the player's browser
+  for that game. The row of keys stays where it is.
+
 ### Plain pixels, no CRT
 
 ```js
@@ -387,6 +445,9 @@ to remember nothing. Save states are kept per game whatever these settings are;
 | `ui.clickToStart` | show the start screen (needed for sound) | `true` |
 | `ui.touchControls` | `'auto'`, `true`, `false` | `'auto'` |
 | `ui.touchKeys` | VIC keys shown as touch buttons: key names, `{ key, label }` or `{ keys: [...], label }` (see *On-screen keys*) | F1 F3 F5 F7 SPACE RETURN Y N |
+| `ui.touchStick` | directions the touch stick gives; `[]` for no stick (see *Touch joystick and fire buttons*) | `['up', 'down', 'left', 'right']` |
+| `ui.touchFire` | touch fire buttons: `'fire'`, a direction or a VIC key, as `'name:label'`, `{ joy, label }`, `{ key, label }` or `{ keys: [...], label }` | `['fire']` |
+| `ui.touchSlide` | a finger sliding onto the touch stick or a fire button takes it; players can switch it (see *Sliding onto the controls*) | `false` |
 | `ui.allowFileDrop` | let players load their own files | `true` |
 | `hotkeys` | `{ joystickToggle: 'F9', warp: 'F10', fullscreen: 'F11', reset: '', saveState: 'Shift+F9', loadState: 'Shift+F10' }`. A key code, optionally after `Shift+`; `''` turns a hotkey off | |
 | `persist` | remember each player's choices in their browser | `true` |

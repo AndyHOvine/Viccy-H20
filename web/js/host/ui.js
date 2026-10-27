@@ -19,6 +19,8 @@ const ICONS = {
   pause: '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>',
   play: '<path d="M7 4l13 8-13 8z"/>',
   states: '<path fill-rule="evenodd" d="M3 3h14l4 4v14H3zm3 2v5h10V5zm6 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>',
+  slide: '<path d="M2 12a4 4 0 1 0 8 0 4 4 0 1 0-8 0zm10-1h6V7.5l4.5 4.5-4.5 4.5V13h-6z"/>',
+  layout: '<path d="M12 2l3.5 3.5H13V11h5.5V8.5L22 12l-3.5 3.5V13H13v5.5h2.5L12 22l-3.5-3.5H11V13H5.5v2.5L2 12l3.5-3.5V11H11V5.5H8.5z"/>',
 };
 
 function icon(name) {
@@ -46,17 +48,50 @@ const TOUCH_KEY_LABELS = {
   CRSRUP: '▲', CRSRLEFT: '◀', LSHIFT: 'SHIFT', RSHIFT: 'SHIFT', HOME: 'CLR/HOME', LEFTARROW: '←', UPARROW: '↑', POUND: '£',
 };
 
-function touchKey(spec) {
+function touchKey(spec, option = 'ui.touchKeys') {
   const s = typeof spec === 'string' ? { key: spec } : spec || {};
   let keys = [].concat(s.keys || s.key || []).map((k) => String(k).toUpperCase());
   const name = keys.length === 1 ? keys[0] : null;
   if (name && SHIFTED_KEYS[name]) keys = ['LSHIFT', SHIFTED_KEYS[name]];
   const bad = keys.filter((k) => VIC_KEYS[k] === undefined && k !== 'RESTORE');
   if (!keys.length || bad.length) {
-    console.warn(`ui.touchKeys: unknown VIC key ${bad.join(', ') || JSON.stringify(spec)}`);
+    console.warn(`${option}: unknown VIC key ${bad.join(', ') || JSON.stringify(spec)}`);
     return null;
   }
   return { keys, label: s.label || TOUCH_KEY_LABELS[name] || name || keys.join('+') };
+}
+
+const TOUCH_JOY = { up: JOY.UP, down: JOY.DOWN, left: JOY.LEFT, right: JOY.RIGHT, fire: JOY.FIRE };
+const TOUCH_JOY_LABELS = { up: '▲', down: '▼', left: '◀', right: '▶', fire: 'FIRE' };
+
+function touchStickBits(spec) {
+  if (spec === undefined || spec === true) return JOY.UP | JOY.DOWN | JOY.LEFT | JOY.RIGHT;
+  if (!spec || String(spec).toLowerCase() === 'none') return 0;
+  let bits = 0;
+  for (const d of typeof spec === 'string' ? spec.split(',') : spec) {
+    const name = String(d).trim().toLowerCase();
+    if (TOUCH_JOY[name] && name !== 'fire') bits |= TOUCH_JOY[name];
+    else if (name) console.warn(`ui.touchStick: unknown direction ${d}`);
+  }
+  return bits;
+}
+
+function touchFireButton(spec) {
+  let s = spec;
+  if (typeof s === 'string') {
+    const at = s.indexOf(':', 1);
+    const name = at < 0 ? s : s.slice(0, at), label = at < 0 ? undefined : s.slice(at + 1);
+    s = TOUCH_JOY[name.toLowerCase()] ? { joy: name, label } : { key: name, label };
+  }
+  if (s && s.joy !== undefined) {
+    const name = String(s.joy).toLowerCase();
+    if (!TOUCH_JOY[name]) {
+      console.warn(`ui.touchFire: unknown joystick input ${s.joy}`);
+      return null;
+    }
+    return { joy: TOUCH_JOY[name], label: s.label || TOUCH_JOY_LABELS[name] };
+  }
+  return touchKey(s, 'ui.touchFire');
 }
 
 export function createUi(app, container) {
@@ -115,6 +150,11 @@ export function createUi(app, container) {
   const bStates = btn('states', 'Save and load', () => toggleStates());
   const bSettings = btn('settings', 'Settings', () => toggleSettings());
   const bFull = btn('fullscreen', 'Fullscreen (F11)', () => toggleFullscreen());
+  const touchWanted = o.touchControls === true ||
+    (o.touchControls === 'auto' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  let touchCtl = null;
+  const bSlide = btn('slide', 'Slide onto touch buttons', () => app.setTouchSlide(!app.touchSlide));
+  const bLayout = btn('layout', 'Move touch controls', () => touchCtl && touchCtl.setEditing(!touchCtl.editing));
   const left = el('div', { class: 'viccy-toolbar-group' });
   const right = el('div', { class: 'viccy-toolbar-group' });
   const full = !o.minimal;
@@ -122,6 +162,7 @@ export function createUi(app, container) {
   if (full) left.append(bReset);
   left.append(bPause, bJoy);
   if (full) left.append(bWarp);
+  if (touchWanted) right.append(bSlide, bLayout);
   if (o.saveStates) right.append(bStates);
   right.append(bCrt);
   right.append(bMute);
@@ -190,6 +231,7 @@ export function createUi(app, container) {
     const vis = show ?? statesPanel.hidden;
     if (vis === !statesPanel.hidden) return;
     if (vis) {
+      if (touchCtl) touchCtl.setEditing(false);
       toggleSettings(false);
       pausedBefore = app.paused;
       app.pause(true);
@@ -414,7 +456,7 @@ export function createUi(app, container) {
 
   function toggleSettings(show) {
     const vis = show ?? panel.hidden;
-    if (vis) { toggleStates(false); buildPanel(); }
+    if (vis) { if (touchCtl) touchCtl.setEditing(false); toggleStates(false); buildPanel(); }
     panel.hidden = !vis;
     app.input.enabled = !vis;
     if (vis) app.input.releaseAll();
@@ -426,13 +468,11 @@ export function createUi(app, container) {
     else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
   }
 
-  const touchWanted = o.touchControls === true ||
-    (o.touchControls === 'auto' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-  let touch = null;
   if (touchWanted) {
-    touch = el('div', { class: 'viccy-touch' });
+    const touch = el('div', { class: 'viccy-touch' });
+    const stickDirs = touchStickBits(o.touchStick);
     const stick = el('div', { class: 'viccy-stick' }, '<div class="viccy-knob"></div>');
-    const fire = el('div', { class: 'viccy-fire' }, 'FIRE');
+    const fires = el('div', { class: 'viccy-fires' });
     const keys = el('div', { class: 'viccy-touch-keys' });
     for (const spec of o.touchKeys || []) {
       const t = touchKey(spec);
@@ -459,40 +499,159 @@ export function createUi(app, container) {
       b.addEventListener('pointerleave', up);
       keys.append(b);
     }
-    touch.append(keys, stick, fire);
-    container.append(touch);
+    touch.append(keys);
+    if (stickDirs) touch.append(stick);
+    else touch.classList.add('viccy-touch-nostick');
 
-    let stickBits = 0, fireBits = 0, stickId = null;
+    const buttons = [].concat(o.touchFire ?? []).map(touchFireButton).filter(Boolean);
+    for (const t of buttons) {
+      t.el = el('div', { class: 'viccy-fire' });
+      t.el.textContent = t.label;
+      fires.append(t.el);
+    }
+    if (buttons.length) touch.append(fires);
+    else touch.classList.add('viccy-touch-nofire');
+    if (buttons.length > 1) touch.classList.add('viccy-touch-fires');
+    if (buttons.length > 2) touch.classList.add('viccy-touch-manyfires');
+    const editBar = el('div', { class: 'viccy-touch-editbar', hidden: '' }, '<span>Drag the stick and buttons to move them</span>');
+    editBar.append(action('Reset', () => resetLayout()), action('Done', () => setEditing(false)));
+    container.append(touch, editBar);
+
+    const fingers = new Map();
+    let stickId = null, stickBits = 0;
     const knob = stick.firstChild;
-    const updateStick = (e) => {
-      const r = stick.getBoundingClientRect();
-      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-      const max = r.width / 2;
-      const len = Math.min(1, Math.hypot(dx, dy) / max);
+    const centre = (node) => {
+      const r = node.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 };
+    };
+    const onStick = (f) => {
+      if (!stickDirs) return false;
+      const c = centre(stick);
+      return Math.hypot(f.x - c.x, f.y - c.y) <= c.r;
+    };
+    const buttonsAt = (f) => buttons.filter((t) => {
+      const c = centre(t.el);
+      return Math.hypot(f.x - c.x, f.y - c.y) <= c.r + f.r;
+    });
+    const fingerAt = (e) => ({ x: e.clientX, y: e.clientY, r: Math.max(16, Math.min(28, (e.width || 0) / 2)) });
+
+    const updateStick = (f) => {
+      const c = centre(stick);
+      let dx = f.x - c.x, dy = f.y - c.y;
+      if (!(stickDirs & (JOY.LEFT | JOY.RIGHT))) dx = 0;
+      if (!(stickDirs & (JOY.UP | JOY.DOWN))) dy = 0;
+      const len = Math.min(1, Math.hypot(dx, dy) / c.r);
       const ang = Math.atan2(dy, dx);
-      knob.style.transform = `translate(${Math.cos(ang) * len * max * 0.6}px, ${Math.sin(ang) * len * max * 0.6}px)`;
+      knob.style.transform = `translate(${Math.cos(ang) * len * c.r * 0.6}px, ${Math.sin(ang) * len * c.r * 0.6}px)`;
       stickBits = 0;
       if (len > 0.3) {
         const oct = Math.round(ang / (Math.PI / 4)) & 7;
         stickBits = [JOY.RIGHT, JOY.RIGHT | JOY.DOWN, JOY.DOWN, JOY.DOWN | JOY.LEFT,
-          JOY.LEFT, JOY.LEFT | JOY.UP, JOY.UP, JOY.UP | JOY.RIGHT][oct];
+          JOY.LEFT, JOY.LEFT | JOY.UP, JOY.UP, JOY.UP | JOY.RIGHT][oct] & stickDirs;
       }
-      app.input.setTouchJoy(stickBits | fireBits);
     };
-    stick.addEventListener('pointerdown', (e) => { e.preventDefault(); app.start(); stickId = e.pointerId; stick.setPointerCapture(e.pointerId); updateStick(e); });
-    stick.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) updateStick(e); });
-    const stickUp = (e) => {
-      if (e.pointerId !== stickId) return;
-      stickId = null; stickBits = 0; knob.style.transform = '';
-      app.input.setTouchJoy(fireBits);
+    const releaseStick = () => { stickId = null; stickBits = 0; knob.style.transform = ''; };
+
+    const refresh = () => {
+      let bits = stickBits;
+      for (const t of buttons) {
+        const down = [...fingers.values()].some((f) => f.buttons.includes(t));
+        if (down !== !!t.held) {
+          t.held = down;
+          t.el.classList.toggle('on', down);
+          if (!t.joy) for (const k of t.keys) app.machine.key(k, down);
+        }
+        if (down && t.joy) bits |= t.joy;
+      }
+      app.input.setTouchJoy(bits);
     };
-    stick.addEventListener('pointerup', stickUp);
-    stick.addEventListener('pointercancel', stickUp);
-    const fireDown = (e) => { e.preventDefault(); app.start(); fireBits = JOY.FIRE; fire.classList.add('on'); app.input.setTouchJoy(stickBits | fireBits); };
-    const fireUp = (e) => { e.preventDefault(); fireBits = 0; fire.classList.remove('on'); app.input.setTouchJoy(stickBits); };
-    fire.addEventListener('pointerdown', fireDown);
-    fire.addEventListener('pointerup', fireUp);
-    fire.addEventListener('pointercancel', fireUp);
+    const moveFinger = (id, f, landed) => {
+      const take = landed || app.touchSlide;
+      if (stickId === null && take && onStick(f)) stickId = id;
+      if (id === stickId) { f.buttons = []; updateStick(f); }
+      else if (take) f.buttons = buttonsAt(f);
+      refresh();
+    };
+
+    const movable = (stickDirs ? [{ id: 'stick', node: stick }] : [])
+      .concat(buttons.map((t, i) => ({ id: 'fire' + (i + 1), node: t.el })));
+    const layout = app.pref('touchLayout', null) || {};
+    let editing = false, editPaused = false, drag = null;
+    const shape = () => (screen.clientHeight > screen.clientWidth ? 'portrait' : 'landscape');
+    const setOffset = (m, x, y) => {
+      m.node.style.transform = '';
+      const r = m.node.getBoundingClientRect(), s = screen.getBoundingClientRect();
+      x = Math.round(Math.min(Math.max(x, s.left - r.left), s.right - r.right));
+      y = Math.round(Math.min(Math.max(y, s.top - r.top), s.bottom - r.bottom));
+      m.node.style.transform = x || y ? `translate(${x}px, ${y}px)` : '';
+      m.at = [x, y];
+    };
+    const place = () => {
+      const offs = layout[shape()] || {};
+      for (const m of movable) setOffset(m, ...(offs[m.id] || [0, 0]));
+    };
+    const saveLayout = () => app.savePref('touchLayout', Object.keys(layout).length ? layout : undefined);
+    const resetLayout = () => { delete layout[shape()]; saveLayout(); place(); };
+    const setEditing = (on) => {
+      if (on === editing) return;
+      if (on) {
+        toggleSettings(false);
+        toggleStates(false);
+        editPaused = app.paused;
+        app.pause(true);
+        fingers.clear();
+        releaseStick();
+        refresh();
+      } else if (!editPaused) {
+        app.pause(false);
+      }
+      editing = on;
+      drag = null;
+      touch.classList.toggle('viccy-touch-edit', on);
+      editBar.hidden = !on;
+      bLayout.classList.toggle('on', on);
+    };
+    touchCtl = { place, setEditing, get editing() { return editing; } };
+
+    const elsewhere = (target) => [toolbar, panel, statesPanel, keys, editBar].some((n) => n.contains(target));
+    container.addEventListener('pointerdown', (e) => {
+      if (elsewhere(e.target)) return;
+      if (editing) {
+        const m = movable.find((c) => c.node.contains(e.target));
+        if (!m) return;
+        e.preventDefault();
+        drag = { id: e.pointerId, m, x0: e.clientX - m.at[0], y0: e.clientY - m.at[1] };
+        return;
+      }
+      const f = { ...fingerAt(e), buttons: [] };
+      fingers.set(e.pointerId, f);
+      moveFinger(e.pointerId, f, true);
+      if (e.pointerId === stickId || f.buttons.length) { e.preventDefault(); app.start(); }
+    }, true);
+    window.addEventListener('pointermove', (e) => {
+      if (drag && e.pointerId === drag.id) {
+        setOffset(drag.m, e.clientX - drag.x0, e.clientY - drag.y0);
+        return;
+      }
+      const f = fingers.get(e.pointerId);
+      if (!f) return;
+      Object.assign(f, fingerAt(e));
+      moveFinger(e.pointerId, f, false);
+    });
+    const lift = (e) => {
+      if (drag && e.pointerId === drag.id) {
+        const offs = layout[shape()] = layout[shape()] || {};
+        offs[drag.m.id] = drag.m.at;
+        saveLayout();
+        drag = null;
+        return;
+      }
+      if (!fingers.delete(e.pointerId)) return;
+      if (e.pointerId === stickId) releaseStick();
+      refresh();
+    };
+    window.addEventListener('pointerup', lift);
+    window.addEventListener('pointercancel', lift);
   }
 
   let toastTimer = 0;
@@ -517,9 +676,11 @@ export function createUi(app, container) {
       const r = screen.getBoundingClientRect();
       app.renderer.alignTop = touchWanted && r.height > r.width;
       app.renderer.resize(r.width, r.height, window.devicePixelRatio || 1);
+      if (touchCtl) touchCtl.place();
     },
     update() {
       bJoy.classList.toggle('on', app.input.joyKeysEnabled);
+      bSlide.classList.toggle('on', !!app.touchSlide);
       joyTag.classList.toggle('on', app.input.joyKeysEnabled);
       bWarp.classList.toggle('on', app.warp);
       bCrt.classList.toggle('on', app.renderer.crt.enabled || app.renderer.filter.enabled);
