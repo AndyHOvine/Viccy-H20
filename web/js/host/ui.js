@@ -162,7 +162,7 @@ export function createUi(app, container) {
   if (full) left.append(bReset);
   left.append(bPause, bJoy);
   if (full) left.append(bWarp);
-  if (touchWanted) right.append(bSlide, bLayout);
+  if (touchWanted) left.append(bSlide, bLayout);
   if (o.saveStates) right.append(bStates);
   right.append(bCrt);
   right.append(bMute);
