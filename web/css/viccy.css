@@ -329,6 +329,8 @@
   bottom: 44px;
   height: 0;
   z-index: 2;
+  --edge-l: calc(40px + env(safe-area-inset-left, 0px));
+  --edge-r: calc(40px + env(safe-area-inset-right, 0px));
 }
 
 .viccy-stick {
@@ -336,7 +338,7 @@
   bottom: 18px;
   border-radius: 50%;
   touch-action: none;
-  left: 18px;
+  left: var(--edge-l);
   width: 132px;
   height: 132px;
   background: rgba(255, 255, 255, 0.07);
@@ -357,7 +359,7 @@
 .viccy-fires {
   --fire: 86px;
   position: absolute;
-  right: 24px;
+  right: var(--edge-r);
   bottom: 18px;
   max-width: calc(var(--fire) * 2 + 14px);
   display: flex;
@@ -394,8 +396,8 @@
 
 .viccy-touch-keys {
   position: absolute;
-  left: 160px;
-  right: 120px;
+  left: calc(var(--edge-l) + 142px);
+  right: calc(var(--edge-r) + 96px);
   bottom: 24px;
   display: flex;
   flex-wrap: wrap;
@@ -442,14 +444,21 @@
 
 .viccy-touch-editbar[hidden] { display: none; }
 
-.viccy-touch-nostick .viccy-touch-keys { left: 24px; }
-.viccy-touch-nofire .viccy-touch-keys { right: 24px; }
-.viccy-touch-fires .viccy-touch-keys { right: 230px; }
+.viccy-touch-nostick .viccy-touch-keys { left: var(--edge-l); }
+.viccy-touch-nofire .viccy-touch-keys { right: var(--edge-r); }
+.viccy-touch-fires .viccy-touch-keys { right: calc(var(--edge-r) + 206px); }
 
-.viccy-notoolbar .viccy-panel, .viccy-notoolbar .viccy-touch { bottom: 0; }
+.viccy-notoolbar .viccy-panel { bottom: 0; }
+.viccy-notoolbar .viccy-touch { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 
 @media (max-width: 520px) {
   .viccy-title { display: none; }
   .viccy-touch .viccy-touch-keys { left: 12px; right: 12px; bottom: 160px; }
   .viccy-touch-manyfires .viccy-touch-keys { bottom: 260px; }
+}
+
+@media (max-width: 400px) {
+  .viccy-touch { --edge-l: calc(28px + env(safe-area-inset-left, 0px)); --edge-r: calc(28px + env(safe-area-inset-right, 0px)); }
+  .viccy-stick { width: 120px; height: 120px; }
+  .viccy-fires { --fire: 72px; }
 }
